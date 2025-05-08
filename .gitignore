@@ -1,0 +1,28 @@
+# File kredensial sensitif
+credentials.json
+
+# Lingkungan virtual Python (jika Anda menggunakannya dan ada di dalam proyek)
+venv/
+*.venv/
+env/
+ENV/
+.env
+
+# File cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# File spesifik OS
+.DS_Store
+Thumbs.db
+
+# File IDE (opsional, sesuaikan dengan IDE Anda)
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Jika Anda menggunakan python-dotenv untuk environment variables lokal
+.env

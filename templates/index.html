@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Input Split Bill</title>
+    <!-- Tambahkan link ke CSS jika ada -->
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .person-block { border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
+        .item-input { display: flex; gap: 10px; margin-bottom: 5px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type=text], input[type=number] { padding: 8px; border: 1px solid #ccc; border-radius: 3px; width: 100%; box-sizing: border-box;}
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; margin-top: 5px;}
+        button:hover { background-color: #0056b3; }
+        .add-button { background-color: #28a745; }
+        .remove-button { background-color: #dc3545; font-size: 0.8em; padding: 5px 8px;}
+        .flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+        .flash-messages li { padding: 10px; margin-bottom: 10px; border-radius: 3px; }
+        .flash-messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash-messages .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flash-messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    </style>
+</head>
+<body>
+    <h1>Aplikasi Split Bill (Web + Google Sheets)</h1>
+
+    <!-- Menampilkan Pesan Flash (Error/Success) -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class=flash-messages>
+        {% for category, message in messages %}
+          <li class="{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('calculate_and_save') }}" method="post">
+        <div id="people-container">
+            <!-- Blok Orang ke-1 (Contoh Awal) -->
+            <div class="person-block" data-person-index="0">
+                <label for="person_name_0">Nama Orang 1:</label>
+                <input type="text" name="person_name_0" required>
+
+                <h4>Item/Menu:</h4>
+                <div class="items-container">
+                    <!-- Item ke-1 -->
+                    <div class="item-input" data-item-index="0">
+                        <input type="text" name="item_name_0_0" placeholder="Nama Item" required>
+                        <input type="number" name="item_price_0_0" placeholder="Harga (Rp)" step="any" min="0" required>
+                        <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
+                    </div>
+                </div>
+                <button type="button" class="add-button" onclick="addItem(this)">+ Tambah Item</button>
+                <hr style="margin-top: 15px;">
+                <button type="button" class="remove-button" onclick="removePerson(this)" style="margin-top: 10px;">Hapus Orang Ini</button>
+            </div>
+        </div>
+
+        <button type="button" class="add-button" onclick="addPerson()">+ Tambah Orang</button>
+        <hr>
+
+        <div>
+            <label for="tax">Pajak (%):</label>
+            <input type="number" id="tax" name="tax" step="any" min="0" value="11"> <!-- Default 11% -->
+        </div>
+        <div>
+            <label for="service">Service Charge (%):</label>
+            <input type="number" id="service" name="service" step="any" min="0" value="5"> <!-- Default 5% -->
+        </div>
+        <div>
+            <label for="sheet_name">Nama Tab di Google Sheet:</label>
+            <input type="text" id="sheet_name" name="sheet_name" value="{{ default_sheet_name }}">
+            <small>Nama unik disarankan. Bisa pakai tanggal otomatis.</small>
+        </div>
+
+        <hr>
+        <button type="submit">Hitung & Simpan ke Google Sheets</button>
+    </form>
+
+    <script>
+        let personCounter = 1; // Mulai dari 1 karena sudah ada 1 blok
+
+        function addItem(button) {
+            const itemsContainer = button.previousElementSibling; // Div 'items-container'
+            const personBlock = button.closest('.person-block');
+            const personIndex = personBlock.getAttribute('data-person-index');
+            const itemIndex = itemsContainer.children.length; // Index item berikutnya
+
+            const newItemDiv = document.createElement('div');
+            newItemDiv.classList.add('item-input');
+            newItemDiv.setAttribute('data-item-index', itemIndex);
+            newItemDiv.innerHTML = `
+                <input type="text" name="item_name_${personIndex}_${itemIndex}" placeholder="Nama Item" required>
+                <input type="number" name="item_price_${personIndex}_${itemIndex}" placeholder="Harga (Rp)" step="any" min="0" required>
+                <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
+            `;
+            itemsContainer.appendChild(newItemDiv);
+        }
+
+        function removeItem(button) {
+            const itemDiv = button.parentElement;
+            const itemsContainer = itemDiv.parentElement;
+            if (itemsContainer.children.length > 1) { // Jangan hapus jika hanya 1 item
+                itemDiv.remove();
+                // Re-index? Mungkin tidak perlu jika backend handle missing index
+            } else {
+                alert('Minimal harus ada satu item per orang.');
+            }
+        }
+
+        function addPerson() {
+            const peopleContainer = document.getElementById('people-container');
+            const newPersonIndex = personCounter++; // Gunakan counter global
+
+            const newPersonDiv = document.createElement('div');
+            newPersonDiv.classList.add('person-block');
+            newPersonDiv.setAttribute('data-person-index', newPersonIndex);
+            newPersonDiv.innerHTML = `
+                <label for="person_name_${newPersonIndex}">Nama Orang ${newPersonIndex + 1}:</label>
+                <input type="text" name="person_name_${newPersonIndex}" required>
+
+                <h4>Item/Menu:</h4>
+                <div class="items-container">
+                    <!-- Item ke-1 untuk orang baru -->
+                    <div class="item-input" data-item-index="0">
+                        <input type="text" name="item_name_${newPersonIndex}_0" placeholder="Nama Item" required>
+                        <input type="number" name="item_price_${newPersonIndex}_0" placeholder="Harga (Rp)" step="any" min="0" required>
+                        <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
+                    </div>
+                </div>
+                <button type="button" class="add-button" onclick="addItem(this)">+ Tambah Item</button>
+                <hr style="margin-top: 15px;">
+                <button type="button" class="remove-button" onclick="removePerson(this)" style="margin-top: 10px;">Hapus Orang Ini</button>
+            `;
+            peopleContainer.appendChild(newPersonDiv);
+        }
+
+         function removePerson(button) {
+            const personDiv = button.closest('.person-block');
+            const peopleContainer = document.getElementById('people-container');
+             if (peopleContainer.children.length > 1) { // Jangan hapus jika hanya 1 orang
+                personDiv.remove();
+                 // Re-label nama orang? Bisa jadi kompleks, biarkan saja label statis
+            } else {
+                alert('Minimal harus ada satu orang.');
+            }
+        }
+
+        // Ganti strftime default untuk nama sheet jika browser tidak support
+        document.addEventListener('DOMContentLoaded', (event) => {
+            const sheetNameInput = document.getElementById('sheet_name');
+            if (sheetNameInput.value.includes('%')) { // Jika masih format strftime
+                 const now = new Date();
+                 const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                 sheetNameInput.value = `Hasil Split Bill ${formattedDate}`;
+            }
+        });
+    </script>
+</body>
+</html>

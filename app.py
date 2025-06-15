@@ -204,5 +204,5 @@ def calculate_and_save():
 if __name__ == '__main__':
     # Jangan jalankan app.run() di sini untuk deployment
     # Server PythonAnywhere akan meng-handle ini melalui file WSGI
-    app.run()
+    # app.run()
     pass

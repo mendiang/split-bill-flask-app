@@ -6,7 +6,8 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'jumadi13')
+app.secret_key = os.environ.get('FLASK_SECRET_KEY','fallback_dev_secret_yang_sebaiknya_tidak_dipakai_di_prod')
+# Di PythonAnywhere, Anda AKAN mengatur FLASK_SECRET_KEY
 
 # --- Konfigurasi Google Sheets ---
 # Lingkup (scope) izin yang diperlukan
@@ -201,6 +202,7 @@ def calculate_and_save():
         return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    # Pastikan path relatif untuk credentials.json benar
-    # Atau gunakan path absolut jika perlu
-    app.run(debug=True) # debug=True hanya untuk development
+    # Jangan jalankan app.run() di sini untuk deployment
+    # Server PythonAnywhere akan meng-handle ini melalui file WSGI
+    app.run()
+    pass

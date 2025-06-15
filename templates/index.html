@@ -59,8 +59,8 @@
         </div>
 
         <button type="button" class="add-button" onclick="addPerson()">+ Tambah Orang</button>
-        <hr>
 
+        <hr>
         <div>
             <label for="tax">Pajak (%):</label>
             <input type="number" id="tax" name="tax" step="any" min="0" value="11"> <!-- Default 11% -->
@@ -74,28 +74,233 @@
             <input type="text" id="sheet_name" name="sheet_name" value="{{ default_sheet_name }}">
             <small>Nama unik disarankan. Bisa pakai tanggal otomatis.</small>
         </div>
+        <hr>
 
         <hr>
+        <button type="button" id="saveDraftButton">Simpan Draft Sementara</button>
+        <button type="button" id="loadDraftButton">Muat Draft Terakhir</button>
+        <button type="button" id="clearDraftButton" style="background-color: #ffc107;">Hapus Draft Tersimpan</button>
+        <hr>
+
         <button type="submit">Hitung & Simpan ke Google Sheets</button>
     </form>
 
     <script>
-        let personCounter = 1; // Mulai dari 1 karena sudah ada 1 blok
+        const form = document.querySelector('form');
+        const peopleContainer = document.getElementById('people-container');
+        const DRAFT_KEY = 'splitBillDraft'; // Kunci untuk localStorage
 
-        function addItem(button) {
-            const itemsContainer = button.previousElementSibling; // Div 'items-container'
-            const personBlock = button.closest('.person-block');
+        let personCounter; // Deklarasikan di lingkup global
+
+        // --- Fungsi untuk Mengumpulkan Data Form ---
+        function getFormData() {
+            const formData = new FormData(form); // Cara mudah mengambil semua field statis
+            const data = {};
+            for (let [key, value] of formData.entries()) {
+                data[key] = value;
+            }
+
+            // Kumpulkan data dinamis (orang dan item)
+            data.people = [];
+            document.querySelectorAll('.person-block').forEach((personBlock, pIndex) => {
+                const personNameInput = personBlock.querySelector(`input[name^="person_name_"]`);
+                if (!personNameInput) return; // Seharusnya tidak terjadi
+
+                const personData = {
+                    name: personNameInput.value,
+                    items: []
+                };
+                personBlock.querySelectorAll('.item-input').forEach((itemElement, iIndex) => {
+                    const itemNameInput = itemElement.querySelector(`input[name^="item_name_"]`);
+                    const itemPriceInput = itemElement.querySelector(`input[name^="item_price_"]`);
+                    if (!itemNameInput || !itemPriceInput) return;
+
+                    personData.items.push({
+                        name: itemNameInput.value,
+                        price: itemPriceInput.value
+                    });
+                });
+                data.people.push(personData);
+            });
+            return data;
+        }
+
+        function addPersonInternal(index, personName = "") {
+            const newPersonDiv = document.createElement('div');
+            newPersonDiv.classList.add('person-block');
+            newPersonDiv.setAttribute('data-person-index', index); // Gunakan index yang diberikan
+            newPersonDiv.innerHTML = `
+                <label for="person_name_${index}">Nama Orang ${index + 1}:</label>
+                <input type="text" name="person_name_${index}" value="${personName}" required>
+
+                <h4>Item/Menu:</h4>
+                <div class="items-container">
+                    <!-- Item ke-1 default untuk orang baru -->
+                    <div class="item-input" data-item-index="0">
+                        <input type="text" name="item_name_${index}_0" placeholder="Nama Item" required>
+                        <input type="number" name="item_price_${index}_0" placeholder="Harga (Rp)" step="any" min="0" required>
+                        <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
+                    </div>
+                </div>
+                <button type="button" class="add-button" onclick="addItem(this)">+ Tambah Item</button>
+                <hr style="margin-top: 15px;">
+                <button type="button" class="remove-button" onclick="removePerson(this)" style="margin-top: 10px;">Hapus Orang Ini</button>
+            `;
+            peopleContainer.appendChild(newPersonDiv);
+        }
+
+        /**
+        * Mengisi kembali seluruh form berdasarkan data draft yang tersimpan.
+        * Fungsi ini membuat ulang elemen orang dan item secara dinamis.
+        * @param {object} data - Objek data draft yang berisi semua nilai form.
+        */
+        function populateForm(data) {
+            if (!data || typeof data !== 'object') {
+                console.error("populateForm: Data draft tidak valid atau tidak ada.", data);
+                alert('Gagal memuat draft: Format data tidak sesuai.');
+                return;
+            }
+
+            // 1. Isi field-field statis (Pajak, Service, Nama Sheet)
+            // Berikan nilai default jika data tidak ada di draft untuk field ini
+            form.querySelector('#tax').value = data.tax || '11';
+            form.querySelector('#service').value = data.service || '5';
+            form.querySelector('#sheet_name').value = data.sheet_name || ''; // Atau generate nama default baru jika kosong
+
+            // 2. Kosongkan kontainer orang sebelum mengisi ulang
+            // Ini memastikan kita memulai dari keadaan bersih.
+            peopleContainer.innerHTML = '';
+          
+
+            // 3. Rekonstruksi blok orang dan item-item mereka
+            if (data.people && Array.isArray(data.people) && data.people.length > 0) {
+                data.people.forEach((personData, pIndex) => {
+                    // Validasi data orang
+                    if (!personData || typeof personData !== 'object') {
+                        console.warn(`populateForm: Data orang pada index ${pIndex} tidak valid, dilewati.`, personData);
+                        return; // Lanjut ke orang berikutnya
+                    }
+
+                    // A. Panggil fungsi internal untuk membuat blok HTML dasar untuk orang ini
+                    //    dan mengisi namanya.
+                    addPersonInternal(pIndex, personData.name || ''); // Menggunakan pIndex dari draft
+
+                    // B. Dapatkan referensi ke blok orang yang baru saja ditambahkan ke DOM
+                    //    Kita asumsikan addPersonInternal menambahkannya sebagai anak terakhir,
+                    //    atau kita bisa menggunakan selector yang lebih spesifik jika perlu.
+                    //    Menggunakan children[pIndex] lebih aman jika addPersonInternal selalu menambahkan sesuai urutan pIndex.
+                    const newPersonBlock = peopleContainer.children[pIndex];
+
+                    if (!newPersonBlock) {
+                        console.error(`populateForm: Gagal mendapatkan newPersonBlock untuk orang index ${pIndex}.`);
+                        return; // Lanjut ke orang berikutnya jika blok tidak ada
+                    }
+
+                    // C. Dapatkan kontainer item di dalam blok orang ini
+                    const itemsContainerElement = newPersonBlock.querySelector('.items-container');
+                    if (!itemsContainerElement) {
+                        console.error(`populateForm: Tidak ditemukan .items-container di personBlock untuk orang index ${pIndex}.`);
+                        return; // Lanjut ke orang berikutnya
+                    }
+                    // Kosongkan item default yang mungkin dibuat oleh addPersonInternal
+                    itemsContainerElement.innerHTML = '';
+
+                    // D. Rekonstruksi item-item untuk orang ini
+                    if (personData.items && Array.isArray(personData.items) && personData.items.length > 0) {
+                        personData.items.forEach((itemData, iIndex) => {
+                            // Validasi data item
+                            if (!itemData || typeof itemData !== 'object') {
+                                console.warn(`populateForm: Data item pada orang index ${pIndex}, item index ${iIndex} tidak valid, dilewati.`, itemData);
+                                return; // Lanjut ke item berikutnya
+                            }
+
+                            // Buat elemen div untuk item input baru
+                            const newItemDiv = document.createElement('div');
+                            newItemDiv.classList.add('item-input');
+                            newItemDiv.setAttribute('data-item-index', iIndex); // Gunakan iIndex dari draft
+
+                            // Isi HTML internal untuk item input dengan nilai dari draft
+                            newItemDiv.innerHTML = `
+                                <input type="text" name="item_name_${pIndex}_${iIndex}" placeholder="Nama Item" value="${itemData.name || ''}" required>
+                                <input type="number" name="item_price_${pIndex}_${iIndex}" placeholder="Harga (Rp)" step="any" min="0" value="${itemData.price || ''}" required>
+                                <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
+                            `;
+
+                            // Tambahkan item baru ke kontainer item
+                            itemsContainerElement.appendChild(newItemDiv);
+                        });
+                    } else {
+                        // Jika tidak ada item di draft untuk orang ini, buat satu blok item input kosong
+                        // Ini memastikan setiap orang selalu memiliki setidaknya satu baris input item.
+                        const newItemDiv = document.createElement('div');
+                        newItemDiv.classList.add('item-input');
+                        newItemDiv.setAttribute('data-item-index', 0); // Item pertama
+                        newItemDiv.innerHTML = `
+                            <input type="text" name="item_name_${pIndex}_0" placeholder="Nama Item" required>
+                            <input type="number" name="item_price_${pIndex}_0" placeholder="Harga (Rp)" step="any" min="0" required>
+                            <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
+                        `;
+                        itemsContainerElement.appendChild(newItemDiv);
+                    }
+                });
+            } else {
+                // Jika tidak ada data orang sama sekali di draft (atau data.people kosong/tidak valid),
+                // buat satu blok orang default.
+                addPersonInternal(0); // Buat orang pertama tanpa nama
+            }
+
+            // 4. Update personCounter global setelah semua orang dari draft dimuat.
+            // Ini penting agar tombol "+ Tambah Orang" berfungsi dengan benar setelah memuat draft.
+            personCounter = peopleContainer.children.length;
+        }
+
+        /**
+        * Menambahkan blok input item baru ke dalam kontainer item milik orang tertentu.
+        * Fungsi ini dipanggil ketika pengguna mengklik tombol "+ Tambah Item".
+        * @param {HTMLButtonElement} buttonElement - Elemen tombol "+ Tambah Item" yang diklik.
+        */
+
+        function addItem(buttonElement) { 
+            // 1. Dapatkan kontainer item (.items-container)
+            //    Kontainer item adalah saudara elemen persis SEBELUM tombol "+ Tambah Item".
+            const itemsContainer = buttonElement.previousElementSibling; 
+
+            // Validasi: Pastikan itemsContainer ditemukan dan memiliki kelas yang benar
+            if (!itemsContainer || !itemsContainer.classList.contains('items-container')) {
+                console.error("addItem: Elemen .items-container tidak ditemukan sebelum tombol yang diklik.", buttonElement);
+                return; // Hentikan eksekusi jika struktur HTML tidak sesuai harapan
+            }
+
+            // 2. Dapatkan blok orang (.person-block) tempat item ini akan ditambahkan
+            const personBlock = buttonElement.closest('.person-block');
+            // Validasi: Pastikan personBlock ditemukan
+            if (!personBlock) {
+                console.error("addItem: Elemen .person-block parent tidak ditemukan untuk tombol:", buttonElement);
+                return; // Hentikan eksekusi
+            }
+
+            // 3. Dapatkan indeks orang (dari atribut data-person-index)
             const personIndex = personBlock.getAttribute('data-person-index');
+            if (personIndex === null) {
+                console.error("addItem: Atribut data-person-index tidak ditemukan pada personBlock.", personBlock);
+                return;
+            }
+
+            // 4. Hitung indeks untuk item baru
+            //    Indeks item baru adalah jumlah item yang sudah ada di dalam itemsContainer.
             const itemIndex = itemsContainer.children.length; // Index item berikutnya
 
+            // 5. Buat elemen HTML untuk item input baru
             const newItemDiv = document.createElement('div');
             newItemDiv.classList.add('item-input');
-            newItemDiv.setAttribute('data-item-index', itemIndex);
+            newItemDiv.setAttribute('data-item-index', itemIndex); // Set atribut data untuk item
             newItemDiv.innerHTML = `
                 <input type="text" name="item_name_${personIndex}_${itemIndex}" placeholder="Nama Item" required>
                 <input type="number" name="item_price_${personIndex}_${itemIndex}" placeholder="Harga (Rp)" step="any" min="0" required>
                 <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
             `;
+
+            // 6. Tambahkan item baru ke dalam itemsContainer
             itemsContainer.appendChild(newItemDiv);
         }
 
@@ -110,34 +315,15 @@
             }
         }
 
+        // Fungsi yang dipanggil oleh tombol "+ Tambah Orang"
         function addPerson() {
-            const peopleContainer = document.getElementById('people-container');
-            const newPersonIndex = personCounter++; // Gunakan counter global
-
-            const newPersonDiv = document.createElement('div');
-            newPersonDiv.classList.add('person-block');
-            newPersonDiv.setAttribute('data-person-index', newPersonIndex);
-            newPersonDiv.innerHTML = `
-                <label for="person_name_${newPersonIndex}">Nama Orang ${newPersonIndex + 1}:</label>
-                <input type="text" name="person_name_${newPersonIndex}" required>
-
-                <h4>Item/Menu:</h4>
-                <div class="items-container">
-                    <!-- Item ke-1 untuk orang baru -->
-                    <div class="item-input" data-item-index="0">
-                        <input type="text" name="item_name_${newPersonIndex}_0" placeholder="Nama Item" required>
-                        <input type="number" name="item_price_${newPersonIndex}_0" placeholder="Harga (Rp)" step="any" min="0" required>
-                        <button type="button" class="remove-button" onclick="removeItem(this)">Hapus Item</button>
-                    </div>
-                </div>
-                <button type="button" class="add-button" onclick="addItem(this)">+ Tambah Item</button>
-                <hr style="margin-top: 15px;">
-                <button type="button" class="remove-button" onclick="removePerson(this)" style="margin-top: 10px;">Hapus Orang Ini</button>
-            `;
-            peopleContainer.appendChild(newPersonDiv);
+            // Indeks untuk orang baru adalah jumlah orang yang sudah ada
+            const newPersonIndex = peopleContainer.children.length;
+            addPersonInternal(newPersonIndex); // Panggil fungsi internal untuk membuat HTML
+            personCounter = peopleContainer.children.length; // Update counter global  
         }
 
-         function removePerson(button) {
+        function removePerson(button) {
             const personDiv = button.closest('.person-block');
             const peopleContainer = document.getElementById('people-container');
              if (peopleContainer.children.length > 1) { // Jangan hapus jika hanya 1 orang
@@ -148,6 +334,11 @@
             }
         }
 
+        // Inisialisasi: jika tidak ada orang, tambahkan satu
+        if(document.querySelectorAll('.person-block').length === 0){
+            addPerson(false); // Tambah satu orang default tanpa klik
+        }
+
         // Ganti strftime default untuk nama sheet jika browser tidak support
         document.addEventListener('DOMContentLoaded', (event) => {
             const sheetNameInput = document.getElementById('sheet_name');
@@ -156,6 +347,67 @@
                  const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                  sheetNameInput.value = `Hasil Split Bill ${formattedDate}`;
             }
+            // Inisialisasi personCounter berdasarkan elemen yang ada di DOM setelah HTML awal dimuat
+            personCounter = peopleContainer.children.length;
+
+            const savedData = localStorage.getItem(DRAFT_KEY);
+
+            // Jika tidak ada blok orang di HTML awal DAN tidak ada draft yang akan dimuat,
+            // buat satu blok orang default.
+            if (personCounter === 0 && !savedData) {
+                addPersonInternal(0); // Buat orang pertama
+                personCounter = 1;    // Set counter
+            }
+
+             // Event listener untuk tombol draft
+            document.getElementById('saveDraftButton').addEventListener('click', () => {
+                const dataToSave = getFormData();
+                try {
+                    localStorage.setItem(DRAFT_KEY, JSON.stringify(dataToSave));
+                    alert('Draft berhasil disimpan di browser Anda!');
+                } catch (e) {
+                    alert('Gagal menyimpan draft. Data terlalu besar atau ada masalah lain.');
+                    console.error("Error saving draft:", e);
+                }
+            });
+
+            document.getElementById('loadDraftButton').addEventListener('click', () => {
+                const currentSavedData = localStorage.getItem(DRAFT_KEY); // Ambil data terbaru
+                if (currentSavedData) {
+                    try {
+                        const draftData = JSON.parse(currentSavedData);
+                        populateForm(draftData); // populateForm akan mengupdate personCounter di akhirnya
+                        alert('Draft berhasil dimuat!');
+                    } catch (e) {
+                        alert('Gagal memuat draft. Data mungkin rusak atau format tidak sesuai.');
+                        console.error("Error parsing/populating draft data:", e);
+                    }
+                } else {
+                    alert('Tidak ada draft yang tersimpan.');
+                }
+            });
+
+            document.getElementById('clearDraftButton').addEventListener('click', () => {
+                if (confirm('Apakah Anda yakin ingin menghapus draft yang tersimpan?')) {
+                    localStorage.removeItem(DRAFT_KEY);
+                    alert('Draft berhasil dihapus.');
+                    // Pertimbangkan untuk me-reset form atau reload halaman
+                    // window.location.reload(); // Cara mudah untuk reset
+                }
+            });
+
+            // Muat draft otomatis jika ada
+            if (savedData) { // Gunakan savedData yang sudah diambil sebelumnya
+                if (confirm('Ditemukan draft tersimpan. Apakah Anda ingin memuatnya?')) {
+                    try {
+                        const draftData = JSON.parse(savedData);
+                        populateForm(draftData);
+                    } catch (e) {
+                        alert('Gagal memuat draft otomatis. Data mungkin rusak.');
+                        console.error("Error auto-parsing/populating draft data:", e);
+                    }
+                }
+            }    
         });
     </script>
 </body>

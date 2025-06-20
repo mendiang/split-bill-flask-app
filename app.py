@@ -16,9 +16,18 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive.file' # Kadang diperlukan
 ]
 
-# Path ke file kredensial JSON Anda
-# Pastikan file ini ada di direktori yang sama atau atur path dengan benar
-SERVICE_ACCOUNT_FILE = 'credentials.json'
+# Ini seperti mencari tahu di mana rumah (file app.py) kita berada
+direktori_saat_ini = os.path.dirname(os.path.abspath(__file__))
+# __file__ adalah alamat file app.py itu sendiri.
+# os.path.abspath(__file__) membuatnya jadi alamat lengkap.
+# os.path.dirname(...) mengambil nama folder dari alamat lengkap itu.
+# Jadi, direktori_saat_ini akan menjadi '/home/imammukhri/mysite'
+
+# Sekarang kita beri tahu alamat lengkap credentials.json
+SERVICE_ACCOUNT_FILE = os.path.join(direktori_saat_ini, 'credentials.json')
+# Ini sama dengan mengatakan: "credentials.json ada di folder 'direktori_saat_ini'
+# dengan nama file 'credentials.json'".
+# Jadi, SERVICE_ACCOUNT_FILE akan menjadi '/home/imammukhri/mysite/credentials.json
 
 # ID Google Sheet tujuan (ambil dari URL sheet)
 SPREADSHEET_ID = '1OLpIWJzaTfSNvdvUiEJTLBBnBglBXpj7p--8m_efM-o' # <<< GANTI INI
